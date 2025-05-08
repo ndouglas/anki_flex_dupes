@@ -35,6 +35,11 @@ if anki_patch_version < 20:
 else:
     use_color_code = False
 
+# Starting with Anki 2.1.37, dupe search works with non-stripped text
+if anki_patch_version < 37:
+    strip_fields = True
+else:
+    strip_fields = True
 
 def dupeOrEmptyWithOrds(self):
     """
@@ -74,7 +79,7 @@ def dupeOrEmptyWithOrds(self):
     return False, None
 
 
-def checkValid(self, _old):
+def checkValid(self):
     """
     Check if the note in the editor has duplicates.  If so, it will highlight the fields that make
     up the note's key.
@@ -99,7 +104,7 @@ def checkValid(self, _old):
     self.web.eval("setBackgrounds(%s);" % json.dumps(cols))
 
 
-def dupeOrEmpty(self, _old):
+def dupeOrEmpty(self):
     """
     Returns 1 if first is empty; 2 if first is a duplicate, False otherwise.
     """
@@ -115,7 +120,12 @@ def showDupes(self):
     terms for other keys that have the _pk suffix.
     """
 
-    contents = stripHTMLMedia(self.note.fields[0])
+    if strip_fields:
+        contents = stripHTMLMedia(self.note.fields[0])
+    else:
+        contents = self.note.fields[0]
+    contents.replace('"', r"\"")
+
     browser = aqt.dialogs.open("Browser", self.mw)
 
     model = self.note.model()
@@ -133,22 +143,19 @@ def showDupes(self):
         if fld["ord"] == 0:
             continue
         elif fld["name"].endswith(KEY_SUFFIX):
-            term = stripHTMLMedia(self.note.fields[fld["ord"]])
+            term = self.note.fields[fld["ord"]].replace('"', r"\"")
             cmd_args = (fld["name"], term)
             if '"' in term and "'" in term:
                 # ignore, unfortunately we can't search for it
                 pass
-            elif '"' in term:
-                search_cmds.append("%s:'%s'" % cmd_args)
-            else:
-                search_cmds.append("%s:\"%s\"" % cmd_args)
+            search_cmds.append("%s:\"%s\"" % cmd_args)
 
     browser.form.searchEdit.lineEdit().setText(" ".join(search_cmds))
     browser.onSearchActivated()
 
 
 def setup():
-    Editor.checkValid = wrap(Editor.checkValid, checkValid, "around")
-    Note.dupeOrEmpty = wrap(Note.dupeOrEmpty, dupeOrEmpty, "around")
+    Editor.checkValid = wrap(Editor.checkValid, checkValid, "after")
+    Note.fields_check = wrap(Note.fields_check, dupeOrEmpty, "after")
     Editor.showDupes = showDupes
     Editor._links["dupes"] = showDupes
